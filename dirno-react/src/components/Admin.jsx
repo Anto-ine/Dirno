@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
+import { apiFetch, authHeaders } from '../api';
 
 export default function Admin({ token, onClose }) {
   const [utilisateurs, setUtilisateurs] = useState([]);
@@ -8,33 +9,34 @@ export default function Admin({ token, onClose }) {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ nom: '', email: '', motDePasse: '', role: 'agent' });
 
-  useEffect(() => {
-    chargerUtilisateurs();
-  }, []);
-
-  async function chargerUtilisateurs() {
+  const chargerUtilisateurs = useCallback(async () => {
     try {
-      const res = await fetch('http://localhost:8000/api/admin/utilisateurs', {
-        headers: { 'Authorization': 'Bearer ' + token }
+      const res = await apiFetch('/api/admin/utilisateurs', {
+        headers: authHeaders(token),
       });
       const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.erreur || 'Impossible de charger les utilisateurs');
+        return;
+      }
       setUtilisateurs(data);
     } catch {
       toast.error('Impossible de charger les utilisateurs');
     } finally {
       setLoading(false);
     }
-  }
+  }, [token]);
+
+  useEffect(() => {
+    chargerUtilisateurs();
+  }, [chargerUtilisateurs]);
 
   async function creerUtilisateur(e) {
     e.preventDefault();
     try {
-      const res = await fetch('http://localhost:8000/api/admin/utilisateurs', {
+      const res = await apiFetch('/api/admin/utilisateurs', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ' + token,
-        },
+        headers: authHeaders(token, true),
         body: JSON.stringify(form),
       });
       const data = await res.json();
@@ -53,10 +55,15 @@ export default function Admin({ token, onClose }) {
 async function supprimerUtilisateur(id, nom) {
     if (!window.confirm(`Supprimer définitivement le compte de ${nom} ?`)) return;
     try {
-      await fetch(`http://localhost:8000/api/admin/utilisateurs/${id}`, {
+      const res = await apiFetch(`/api/admin/utilisateurs/${id}`, {
         method: 'DELETE',
-        headers: { 'Authorization': 'Bearer ' + token }
+        headers: authHeaders(token),
       });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data.erreur || 'Erreur lors de la suppression');
+        return;
+      }
       toast.success('Utilisateur supprimé');
       chargerUtilisateurs();
     } catch {
@@ -65,10 +72,15 @@ async function supprimerUtilisateur(id, nom) {
   }
   async function toggleUtilisateur(id) {
     try {
-      await fetch(`http://localhost:8000/api/admin/utilisateurs/${id}/toggle`, {
+      const res = await apiFetch(`/api/admin/utilisateurs/${id}/toggle`, {
         method: 'PUT',
-        headers: { 'Authorization': 'Bearer ' + token }
+        headers: authHeaders(token),
       });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data.erreur || 'Erreur lors de la mise à jour');
+        return;
+      }
       chargerUtilisateurs();
     } catch {
       toast.error('Erreur lors de la mise à jour');

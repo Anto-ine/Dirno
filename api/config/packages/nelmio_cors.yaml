@@ -1,0 +1,20 @@
+nelmio_cors:
+    defaults:
+        origin_regex: true
+        allow_origin: ['%env(CORS_ALLOW_ORIGIN)%']
+        allow_methods: ['GET', 'OPTIONS', 'POST', 'PUT', 'DELETE']
+        allow_headers: ['Content-Type', 'Authorization']
+        expose_headers: ['Link']
+        max_age: 3600
+    paths:
+        # En production le front est servi par ce même serveur : les requêtes sont
+        # de même origine et ne déclenchent pas de CORS. La règle ci-dessous ne
+        # sert donc qu'au développement (Vite sur le port 5173).
+        #
+        # Elle était auparavant à allow_origin: ['*'], ce qui annulait la
+        # restriction ci-dessus et autorisait n'importe quel site à appeler l'API.
+        '^/api':
+            allow_origin: ['%env(CORS_ALLOW_ORIGIN)%']
+            allow_headers: ['Content-Type', 'Authorization']
+            allow_methods: ['POST', 'PUT', 'GET', 'DELETE', 'OPTIONS']
+            max_age: 3600

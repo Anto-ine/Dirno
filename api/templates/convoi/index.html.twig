@@ -1,0 +1,160 @@
+{% extends 'base.html.twig' %}
+
+{% block content %}
+<div class="section-title">
+    <span class="section-num">1</span> Convoi &amp; itinéraire
+</div>
+
+<form method="POST" action="{{ path('convoi_verifier') }}">
+    <div class="grid-2">
+
+        {# Dimensions #}
+        <div class="card">
+            <div class="card-title">Dimensions et masse</div>
+
+            <div class="form-row">
+                <label>Catégorie du convoi</label>
+                <select name="categorie" class="field" required>
+                    <option value="">— Sélectionner —</option>
+                    <option value="1">1ère catégorie</option>
+                    <option value="2">2ème catégorie</option>
+                    <option value="3">3ème catégorie</option>
+                </select>
+            </div>
+
+            <div class="col-2">
+                <div class="form-row">
+                    <label>Masse totale <small>t</small></label>
+                    <input type="number" name="masse" class="field" placeholder="48" step="0.1" min="0" required>
+                </div>
+                <div class="form-row">
+                    <label>Essieu max <small>t</small></label>
+                    <input type="number" name="essieu" class="field" placeholder="13" step="0.1" min="0">
+                </div>
+                <div class="form-row">
+                    <label>Largeur <small>m</small></label>
+                    <input type="number" name="largeur" class="field" placeholder="3.50" step="0.01" min="0" required>
+                </div>
+                <div class="form-row">
+                    <label>Hauteur <small>m</small></label>
+                    <input type="number" name="hauteur" class="field" placeholder="4.20" step="0.01" min="0" required>
+                </div>
+                <div class="form-row">
+                    <label>Longueur <small>m</small></label>
+                    <input type="number" name="longueur" class="field" placeholder="25" step="0.01" min="0" required>
+                </div>
+                <div class="form-row">
+                    <label>Vitesse <small>km/h</small></label>
+                    <input type="number" name="vitesse" class="field" placeholder="70" step="1" min="0">
+                </div>
+            </div>
+
+            <div class="form-row">
+                <label>Date prévisionnelle</label>
+                <input type="date" name="datePassage" class="field">
+            </div>
+        </div>
+
+        {# Itinéraire #}
+        <div class="card">
+            <div class="card-title">Itinéraire</div>
+
+            <div id="troncons">
+                <div class="troncon-card">
+                    <div class="troncon-header">
+                        <div class="troncon-num">Tronçon 1</div>
+                    </div>
+                    <div class="form-row">
+                        <label>Route</label>
+                        <select name="troncons[0][route]" class="field">
+                            <option value="">— Route —</option>
+                            {% for groupe, routes in routes %}
+                                <optgroup label="{{ groupe }}">
+                                    {% for r in routes %}
+                                        <option value="{{ r }}">{{ r }}</option>
+                                    {% endfor %}
+                                </optgroup>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-2">
+                        <div class="form-row">
+                            <label>PR début</label>
+                            <input type="text" name="troncons[0][prDebut]" class="field" placeholder="12+500">
+                        </div>
+                        <div class="form-row">
+                            <label>PR fin</label>
+                            <input type="text" name="troncons[0][prFin]" class="field" placeholder="45+200">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <label>Sens</label>
+                        <select name="troncons[0][sens]" class="field">
+                            <option value="">— Sens —</option>
+                            <option value="croissant">PR croissants</option>
+                            <option value="decroissant">PR décroissants</option>
+                            <option value="les-deux">Les deux sens</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <button type="button" class="btn-add" onclick="ajouterTroncon()">
+                + Ajouter un tronçon
+            </button>
+
+            <div class="btn-wrap">
+                <button type="submit" class="btn-cta">Lancer la vérification →</button>
+            </div>
+        </div>
+    </div>
+</form>
+
+<script>
+let count = 1;
+const routes = {{ routes|json_encode|raw }};
+
+function ajouterTroncon() {
+    const div = document.createElement('div');
+    div.className = 'troncon-card';
+    let options = '<option value="">— Route —</option>';
+    for (const [groupe, liste] of Object.entries(routes)) {
+        options += `<optgroup label="${groupe}">`;
+        for (const r of liste) options += `<option value="${r}">${r}</option>`;
+        options += '</optgroup>';
+    }
+    div.innerHTML = `
+        <div class="troncon-header">
+            <div class="troncon-num">Tronçon ${count + 1}</div>
+            <button type="button" class="btn-remove" onclick="this.closest('.troncon-card').remove()">×</button>
+        </div>
+        <div class="form-row">
+            <label>Route</label>
+            <select name="troncons[${count}][route]" class="field">${options}</select>
+        </div>
+        <div class="col-2">
+            <div class="form-row">
+            
+                <label>PR début</label>
+                <input type="text" name="troncons[${count}][prDebut]" class="field" placeholder="12+500">
+            </div>
+            <div class="form-row">
+                <label>PR fin</label>
+                <input type="text" name="troncons[${count}][prFin]" class="field" placeholder="45+200">
+            </div>
+        </div>
+        <div class="form-row">
+            <label>Sens</label>
+            <select name="troncons[${count}][sens]" class="field">
+                <option value="">— Sens —</option>
+                <option value="croissant">PR croissants</option>
+                <option value="decroissant">PR décroissants</option>
+                <option value="les-deux">Les deux sens</option>
+            </select>
+        </div>
+    `;
+    document.getElementById('troncons').appendChild(div);
+    count++;
+}
+</script>
+{% endblock %}

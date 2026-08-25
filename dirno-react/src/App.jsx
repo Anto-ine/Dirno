@@ -1,7 +1,17 @@
-﻿import { useState, useCallback } from 'react';
+﻿import { useState, useCallback, useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Toaster, toast } from 'sonner';
-import { LIMITES } from './constants';
+import {
+  LIMITES,
+  HAUTEUR_MAX,
+  HAUTEUR_WARN,
+  ESSIEU_MAX,
+  RATIO_WARN,
+  verifierSynchronisation,
+} from './constants';
+import { apiUrl, authHeaders, apiFetch, EVENEMENT_SESSION_EXPIREE } from './api';
+import { parsePR, prDansIntervalle } from './pr';
+import { lireSession, ecrireSession, effacerSession } from './session';
 import Header from './components/Header';
 import Hero from './components/Hero';
 import Stepper from './components/Stepper';
@@ -15,11 +25,19 @@ import Login from './components/Login';
 import Historique from './components/Historique';
 import Admin from './components/Admin';
 
-const EMPTY_TRONCON = { route: '', prDebut: '', prFin: '', sens: '' };
+// Chaque tronçon porte un identifiant stable : indexer les clés React sur la
+// position faisait dériver les animations quand on supprimait un tronçon du milieu.
+let prochainTronconId = 0;
+const nouveauTroncon = () => ({ id: ++prochainTronconId, route: '', prDebut: '', prFin: '', sens: '' });
 
 function App() {
-  const [token, setToken] = useState(null);
-  const [utilisateur, setUtilisateur] = useState(null);
+  // Session reprise depuis le navigateur : l'agent reste connecté d'une
+  // ouverture à l'autre, jusqu'à l'expiration du jeton (12 h).
+  // Lue une seule fois : deux appels séparés pourraient se contredire si la
+  // session expirait entre les deux.
+  const [sessionInitiale] = useState(lireSession);
+  const [token, setToken] = useState(sessionInitiale?.token ?? null);
+  const [utilisateur, setUtilisateur] = useState(sessionInitiale?.utilisateur ?? null);
   const [ouvrages, setOuvrages] = useState(null);
   const [reseau, setReseau] = useState(null);
   const [categorie, setCategorie] = useState('');
@@ -30,7 +48,7 @@ function App() {
   const [longueur, setLongueur] = useState('');
   const [vitesse, setVitesse] = useState('');
   const [datePassage, setDatePassage] = useState('');
-  const [troncons, setTroncons] = useState([{ ...EMPTY_TRONCON }]);
+  const [troncons, setTroncons] = useState([nouveauTroncon()]);
   const [resultStatus, setResultStatus] = useState(null);
   const [resultChecks, setResultChecks] = useState([]);
   const [resultTroncons, setResultTroncons] = useState([]);
@@ -39,26 +57,57 @@ const [showAdmin, setShowAdmin] = useState(false);
 
   const currentStep = resultStatus ? 3 : 2;
 
+  // Le serveur peut refuser un jeton avant son échéance (compte désactivé,
+  // secret régénéré) : on revient alors proprement à l'écran de connexion.
+  useEffect(() => {
+    function surSessionExpiree() {
+      effacerSession();
+      setToken(null);
+      setUtilisateur(null);
+      setShowHistorique(false);
+      setShowAdmin(false);
+      toast.error('Session expirée — veuillez vous reconnecter.');
+    }
+
+    window.addEventListener(EVENEMENT_SESSION_EXPIREE, surSessionExpiree);
+
+    return () => window.removeEventListener(EVENEMENT_SESSION_EXPIREE, surSessionExpiree);
+  }, []);
+
+  // Alerte en console si les limites du front ont divergé de celles du serveur :
+  // sans cela, un seul des deux côtés mis à jour passerait inaperçu.
+  useEffect(() => {
+    if (!token) return;
+    fetch(apiUrl('/api/config'))
+      .then((res) => (res.ok ? res.json() : null))
+      .then((cfg) => cfg && verifierSynchronisation(cfg))
+      .catch(() => {});
+  }, [token]);
+
   function handleLogin(tok, user) {
+    ecrireSession(tok, user);
     setToken(tok);
     setUtilisateur(user);
   }
 
   function handleLogout() {
+    effacerSession();
     setToken(null);
     setUtilisateur(null);
+    setShowHistorique(false);
+    setShowAdmin(false);
   }
 
   const ajouterTroncon = useCallback(() => {
-    setTroncons((prev) => [...prev, { ...EMPTY_TRONCON }]);
+    setTroncons((prev) => [...prev, nouveauTroncon()]);
   }, []);
 
-  const supprimerTroncon = useCallback((index) => {
-    setTroncons((prev) => prev.filter((_, i) => i !== index));
+  const supprimerTroncon = useCallback((id) => {
+    setTroncons((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  const updateTroncon = useCallback((index, updated) => {
-    setTroncons((prev) => prev.map((t, i) => (i === index ? updated : t)));
+  const updateTroncon = useCallback((id, updated) => {
+    setTroncons((prev) => prev.map((t) => (t.id === id ? { ...updated, id } : t)));
   }, []);
 
   function resetForm() {
@@ -70,7 +119,7 @@ const [showAdmin, setShowAdmin] = useState(false);
     setLongueur('');
     setVitesse('');
     setDatePassage('');
-    setTroncons([{ ...EMPTY_TRONCON }]);
+    setTroncons([nouveauTroncon()]);
     setResultStatus(null);
     setResultChecks([]);
     setResultTroncons([]);
@@ -105,26 +154,30 @@ const [showAdmin, setShowAdmin] = useState(false);
     };
 
     const lm = LIMITES.masse[cat];
-    if (m > lm)            push('Masse totale',     m + ' t',  lm + ' t',   'ko',      'Dépasse la limite de ' + lm + ' t');
-    else if (m > lm * 0.9) push('Masse totale',     m + ' t',  lm + ' t',   'warning', 'Proche de la limite réglementaire');
-    else                   push('Masse totale',      m + ' t',  lm + ' t',   'ok',      'Conforme');
+    if (m > lm)                   push('Masse totale',     m + ' t',  lm + ' t',   'ko',      'Dépasse la limite de ' + lm + ' t');
+    else if (m > lm * RATIO_WARN) push('Masse totale',     m + ' t',  lm + ' t',   'warning', 'Proche de la limite réglementaire');
+    else                          push('Masse totale',     m + ' t',  lm + ' t',   'ok',      'Conforme');
 
     const ll = LIMITES.largeur[cat];
     if (l > ll)            push('Largeur hors tout', l + ' m',  ll + ' m',   'ko',      'Dépasse la limite de ' + ll + ' m');
     else                   push('Largeur hors tout', l + ' m',  ll + ' m',   'ok',      'Conforme');
 
-    if (h > 4.75)          push('Hauteur',           h + ' m',  '4,75 m',    'ko',      'Dépasse le gabarit maximal');
-    else if (h > 4.30)     push('Hauteur',           h + ' m',  '4,75 m',    'warning', 'Vérifier les ouvrages sur le trajet');
-    else                   push('Hauteur',           h + ' m',  '4,75 m',    'ok',      'Conforme');
+    if (h > HAUTEUR_MAX)       push('Hauteur',           h + ' m',  '4,75 m',    'ko',      'Dépasse le gabarit maximal');
+    else if (h > HAUTEUR_WARN) push('Hauteur',           h + ' m',  '4,75 m',    'warning', 'Vérifier les ouvrages sur le trajet');
+    else                       push('Hauteur',           h + ' m',  '4,75 m',    'ok',      'Conforme');
 
     const llon = LIMITES.longueur[cat];
     if (lo > llon)         push('Longueur totale',   lo + ' m', llon + ' m', 'ko',      'Dépasse la limite de ' + llon + ' m');
     else                   push('Longueur totale',   lo + ' m', llon + ' m', 'ok',      'Conforme');
 
     if (!isNaN(es)) {
-      if (es > 13)         push('Charge essieu',     es + ' t', '13 t',      'ko',      'Dépasse la charge essieu maximale');
-      else                 push('Charge essieu',     es + ' t', '13 t',      'ok',      'Conforme');
+      if (es > ESSIEU_MAX) push('Charge essieu',     es + ' t', ESSIEU_MAX + ' t', 'ko', 'Dépasse la charge essieu maximale');
+      else                 push('Charge essieu',     es + ' t', ESSIEU_MAX + ' t', 'ok', 'Conforme');
     }
+
+    // Les contrôles d'ouvrages sont isolés : ils sont transmis au serveur pour
+    // qu'il enregistre le même statut que celui affiché ici.
+    const debutOuvrages = checks.length;
 
     if (ouvrages?.raw?.length) {
       const ouvragesConcernes = ouvrages.raw.filter((row) => {
@@ -132,13 +185,8 @@ const [showAdmin, setShowAdmin] = useState(false);
         return activeTroncons.some((t) => {
           const voieTroncon = t.route.trim().toUpperCase();
           if (voieOuvrage !== voieTroncon) return false;
-          const prOuvrage = parseFloat(row['PR'] || row['pr'] || 0);
-          const prDebut = t.prDebut ? parseFloat(t.prDebut) : null;
-          const prFin = t.prFin ? parseFloat(t.prFin) : null;
-          if (prDebut !== null && prFin !== null) {
-            return prOuvrage >= Math.min(prDebut, prFin) && prOuvrage <= Math.max(prDebut, prFin);
-          }
-          return true;
+          const prOuvrage = parsePR(row['PR'] ?? row['pr']);
+          return prDansIntervalle(prOuvrage, parsePR(t.prDebut), parsePR(t.prFin));
         });
       });
 
@@ -153,7 +201,7 @@ const [showAdmin, setShowAdmin] = useState(false);
           if (limite > 0 && m > limite) {
             push("Ouvrage PR " + pr, m + ' t', limite + ' t', 'ko', nom + ' — dépasse la limite');
             ouvrageKo = true;
-          } else if (limite > 0 && m > limite * 0.9) {
+          } else if (limite > 0 && m > limite * RATIO_WARN) {
             push("Ouvrage PR " + pr, m + ' t', limite + ' t', 'warning', nom + ' — proche de la limite');
           }
         });
@@ -165,22 +213,23 @@ const [showAdmin, setShowAdmin] = useState(false);
       push("Ouvrages d'art", 'Base non chargée', '—', 'warning', 'Importer la base ODS pour vérifier les ouvrages');
     }
 
+    const ouvrageChecks = checks.slice(debutOuvrages);
+
     setResultStatus(status);
     setResultChecks(checks);
     setResultTroncons(activeTroncons.map((t, i) => ({ ...t, num: i + 1 })));
 
-    const msg = status === 'pass' ? 'Convoi autorisé ✅' : status === 'warning' ? 'Vérification sous réserve ⚠️' : 'Convoi non conforme ❌';
+    const msg = status === 'pass' ? 'Convoi autorisé ✅' : status === 'warning' ? 'Vérification sous réserve ⚠️' : 'Attention, vérifier la géométrie de l\'itinéraire ';
     if (status === 'pass') toast.success(msg);
     else if (status === 'warning') toast.warning(msg);
     else toast.error(msg);
 
     if (token) {
-      fetch('http://localhost:8000/api/verifier', {
+      const v = parseFloat(vitesse);
+
+      apiFetch('/api/verifier', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ' + token,
-        },
+        headers: authHeaders(token, true),
         body: JSON.stringify({
           categorie: cat,
           masse: m,
@@ -188,11 +237,20 @@ const [showAdmin, setShowAdmin] = useState(false);
           largeur: l,
           hauteur: h,
           longueur: lo,
-          vitesse: parseFloat(vitesse) || null,
+          vitesse: isNaN(v) ? null : v,
           datePassage: datePassage || null,
           troncons: activeTroncons,
+          ouvrageChecks,
         }),
-      }).catch(() => console.log('Sauvegarde BDD échouée'));
+      })
+        .then(async (res) => {
+          // Le cas 401 est traité globalement (retour à l'écran de connexion).
+          if (res.ok || res.status === 401) return;
+          // Un échec silencieux laisserait croire la vérification archivée.
+          const data = await res.json().catch(() => ({}));
+          toast.error('Vérification non archivée : ' + (data.erreur || `erreur ${res.status}`));
+        })
+        .catch(() => toast.error('Vérification non archivée : serveur injoignable.'));
     }
   }
 
@@ -343,11 +401,11 @@ const [showAdmin, setShowAdmin] = useState(false);
                   <AnimatePresence>
                     {troncons.map((t, i) => (
                       <TronconCard
-                        key={i}
+                        key={t.id}
                         index={i}
                         troncon={t}
-                        onChange={(updated) => updateTroncon(i, updated)}
-                        onRemove={() => supprimerTroncon(i)}
+                        onChange={(updated) => updateTroncon(t.id, updated)}
+                        onRemove={() => supprimerTroncon(t.id)}
                         canRemove={troncons.length > 1}
                       />
                     ))}

@@ -1,0 +1,17 @@
+# Secrets et configuration propre à chaque installation
+.env.local
+.env.*.local
+
+# Dépendances
+/vendor/
+
+# Données et fichiers générés à l'exécution
+/var/cache/
+/var/log/
+/var/audit/
+/var/rate-limit/
+/var/*.db
+/var/*.db.backup-*
+
+# Front compilé (régénéré par « npm run build »)
+/public/app/

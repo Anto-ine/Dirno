@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
+import { apiUrl } from '../api';
 
 export default function Login({ onLogin }) {
   const [email, setEmail] = useState('');
@@ -12,7 +13,7 @@ export default function Login({ onLogin }) {
     setLoading(true);
 
     try {
-      const res = await fetch('http://localhost:8000/api/login', {
+      const res = await fetch(apiUrl('/api/login'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, motDePasse }),
@@ -28,7 +29,7 @@ export default function Login({ onLogin }) {
       toast.success('Bienvenue ' + data.utilisateur.nom + ' !');
       onLogin(data.token, data.utilisateur);
 
-    } catch (err) {
+    } catch {
       toast.error('Impossible de contacter le serveur');
     } finally {
       setLoading(false);

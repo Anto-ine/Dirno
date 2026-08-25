@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
+import { apiFetch, authHeaders } from '../api';
 
 export default function Historique({ token, onClose }) {
   const [convois, setConvois] = useState([]);
@@ -8,20 +9,23 @@ export default function Historique({ token, onClose }) {
   const [selected, setSelected] = useState(null);
 
   useEffect(() => {
-    fetch('http://localhost:8000/api/historique', {
-      headers: { 'Authorization': 'Bearer ' + token }
-    })
-      .then(res => res.json())
+    apiFetch('/api/historique', { headers: authHeaders(token) })
+      .then(res => (res.ok ? res.json() : Promise.reject(new Error(String(res.status)))))
       .then(data => { setConvois(data); setLoading(false); })
       .catch(() => { setErreur('Impossible de charger l\'historique'); setLoading(false); });
   }, [token]);
 
   async function supprimerConvoi(id) {
     if (!window.confirm('Supprimer cette vérification ?')) return;
-    await fetch(`http://localhost:8000/api/convois/${id}`, {
+    const res = await apiFetch(`/api/convois/${id}`, {
       method: 'DELETE',
-      headers: { 'Authorization': 'Bearer ' + token }
+      headers: authHeaders(token),
     });
+    // Ne retirer de la liste que si le serveur a réellement supprimé.
+    if (!res.ok) {
+      setErreur('Suppression impossible — la vérification est toujours archivée.');
+      return;
+    }
     setConvois(convois.filter(c => c.id !== id));
     if (selected?.id === id) setSelected(null);
   }

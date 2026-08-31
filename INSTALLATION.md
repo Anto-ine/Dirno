@@ -15,7 +15,7 @@ suivants prennent moins de 10 s. Aucune commande, aucune fenêtre de terminal.
 
 ### Première connexion
 
-Le premier lancement crée un fichier **`IDENTIFIANTS.txt`** à la racine du
+Le premier lancement crée un fichier **`MOT-DE-PASSE-INITIAL.txt`** à la racine du
 dossier, contenant l'adresse et un mot de passe **généré aléatoirement pour ce
 poste** (format `Abcd-1234-Efgh-5678`).
 
@@ -23,7 +23,7 @@ Ensuite :
 
 1. se connecter avec ces identifiants ;
 2. changer le mot de passe → double-clic sur **`changer-mot-de-passe.bat`** ;
-3. **supprimer `IDENTIFIANTS.txt`**.
+3. **supprimer `MOT-DE-PASSE-INITIAL.txt`**.
 
 ### Arrêt
 
@@ -76,11 +76,31 @@ d'échouer silencieusement.
 
 ## 3. Démarrage automatique avec le poste (facultatif)
 
-Sans installer de logiciel tiers, via le Planificateur de tâches Windows :
+Pour que DIRNO se lance à l'ouverture de session, déposer un raccourci dans le
+dossier **Démarrage** de l'utilisateur. Une seule commande, **sans droits
+administrateur** :
 
 ```powershell
+$s = (New-Object -ComObject WScript.Shell).CreateShortcut("$([Environment]::GetFolderPath('Startup'))\DIRNO.lnk"); $s.TargetPath = "C:\DIRNO\DIRNO.vbs"; $s.WorkingDirectory = "C:\DIRNO"; $s.Save()
+```
+
+> Adapter `C:\DIRNO` à l'emplacement réel du dossier sur le poste du client.
+
+Pour vérifier, ou pour retirer le démarrage automatique, ouvrir le dossier avec
+`Win+R` puis `shell:startup` : le raccourci `DIRNO` s'y trouve, et il suffit de
+le supprimer pour revenir en arrière.
+
+### Variante par tâche planifiée
+
+Le Planificateur de tâches convient aussi, mais **`Register-ScheduledTask` échoue
+en « Accès refusé » depuis un PowerShell ordinaire** : il faut une console lancée
+en tant qu'administrateur, ce dont le dossier Démarrage se passe. À réserver au
+cas où la DSI impose ce mécanisme.
+
+```powershell
+# À exécuter dans un PowerShell ADMINISTRATEUR
 $action    = New-ScheduledTaskAction -Execute "wscript.exe" `
-                -Argument '"C:\Users\Pechon\Dirno-projet\DIRNO.vbs"'
+                -Argument '"C:\DIRNO\DIRNO.vbs"'
 $trigger   = New-ScheduledTaskTrigger -AtLogOn
 $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -RunLevel Limited
 
@@ -89,8 +109,9 @@ Register-ScheduledTask -TaskName "DIRNO" -Action $action -Trigger $trigger `
                        -Description "Serveur local DIRNO - transports exceptionnels"
 ```
 
-`-RunLevel Limited` : la tâche s'exécute **sans privilèges administrateur**,
-conformément au principe de moindre privilège.
+`-RunLevel Limited` : une fois créée, la tâche s'exécute **sans privilèges
+administrateur**, conformément au principe de moindre privilège. Seule sa
+création en demande.
 
 ---
 
@@ -113,11 +134,11 @@ conformément au principe de moindre privilège.
 ### Automatique à l'installation
 
 - Secret unique par poste (32 octets aléatoires) — jamais celui du développement.
-- Mot de passe administrateur unique par poste, remis via `IDENTIFIANTS.txt`.
+- Mot de passe administrateur unique par poste, remis via `MOT-DE-PASSE-INITIAL.txt`.
 
 ### À faire après installation
 
-- [ ] **Changer le mot de passe** (`changer-mot-de-passe.bat`) puis **supprimer `IDENTIFIANTS.txt`**.
+- [ ] **Changer le mot de passe** (`changer-mot-de-passe.bat`) puis **supprimer `MOT-DE-PASSE-INITIAL.txt`**.
 - [ ] **Restreindre les droits NTFS** sur `api/var/` (base, journaux) au seul compte de l'agent.
 - [ ] **Mettre en place une sauvegarde** de `api/var/data.db` (voir §5).
 - [ ] Faire valider les limites de longueur **30 / 35 / 45 m** par le client.
@@ -141,7 +162,7 @@ Toutes les données tiennent dans un seul fichier : **`api/var/data.db`**.
 Le copier régulièrement (script planifié vers un partage réseau sauvegardé) :
 
 ```powershell
-Copy-Item "C:\Users\Pechon\Dirno-projet\api\var\data.db" `
+Copy-Item "C:\DIRNO\api\var\data.db" `
           "\\serveur-dirno\sauvegardes\dirno-$(Get-Date -Format 'yyyyMMdd').db"
 ```
 

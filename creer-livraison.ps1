@@ -49,6 +49,7 @@ Copy-Item "$racine\demarrer-dirno.bat"        -Destination $Destination -Force
 Copy-Item "$racine\changer-mot-de-passe.bat"  -Destination $Destination -Force
 Copy-Item "$racine\diagnostic-poste.ps1"      -Destination $Destination -Force
 Copy-Item "$racine\INSTALLATION.md"           -Destination $Destination -Force
+Copy-Item "$racine\UTILISATION.md"            -Destination $Destination -Force
 
 # --- 4. PHP embarque ------------------------------------------------
 if (Test-Path $CheminPhp) {
